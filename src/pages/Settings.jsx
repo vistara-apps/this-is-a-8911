@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
-import { ArrowLeft, Crown, User, MapPin, Trash2, Download, Mail } from 'lucide-react'
+import { ArrowLeft, Crown, User, MapPin, Trash2, Download, Mail, CreditCard } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useUser } from '../context/UserContext'
 import { US_STATES } from '../data/stateRights'
 import StateSelector from '../components/StateSelector'
+import { StripeService } from '../services/api'
 
 export default function Settings() {
   const { 
@@ -18,18 +19,102 @@ export default function Settings() {
   
   const [activeTab, setActiveTab] = useState('account')
   const [email, setEmail] = useState(user?.email || '')
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   
   const stateName = US_STATES.find(s => s.code === selectedState)?.name || selectedState
 
-  const handleUpgrade = () => {
-    // In a real app, this would integrate with Stripe
-    setSubscriptionStatus('active')
-    alert('Upgrade successful! (Demo mode)')
+  const handleUpgrade = async () => {
+    if (!user) {
+      alert('Please create an account first')
+      return
+    }
+
+    setIsProcessingPayment(true)
+    try {
+      // Create customer if needed
+      const customerResponse = await fetch('/api/create-customer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email || email,
+          name: user.name || 'Shield Rights User',
+          userId: user.userId
+        })
+      })
+
+      if (!customerResponse.ok) {
+        throw new Error('Failed to create customer')
+      }
+
+      const { customerId } = await customerResponse.json()
+
+      // Create payment intent for $3.99/month
+      const paymentResponse = await fetch('/api/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: 3.99,
+          metadata: { userId: user.userId, type: 'subscription' }
+        })
+      })
+
+      if (!paymentResponse.ok) {
+        throw new Error('Failed to create payment intent')
+      }
+
+      const { clientSecret } = await paymentResponse.json()
+
+      // Initialize Stripe and confirm payment
+      const stripe = await StripeService.initialize()
+      const { error } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: {
+            // In a real implementation, you'd collect card details from user
+            number: '4242424242424242',
+            exp_month: 12,
+            exp_year: 2025,
+            cvc: '123'
+          }
+        }
+      })
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      setSubscriptionStatus('active')
+      alert('Upgrade successful!')
+    } catch (error) {
+      console.error('Payment failed:', error)
+      alert(`Payment failed: ${error.message}`)
+    } finally {
+      setIsProcessingPayment(false)
+    }
   }
 
-  const handleCancelSubscription = () => {
-    setSubscriptionStatus('cancelled')
-    alert('Subscription cancelled')
+  const handleCancelSubscription = async () => {
+    if (!user) return
+
+    try {
+      const response = await fetch('/api/cancel-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscriptionId: user.subscriptionId, // You'd need to store this
+          userId: user.userId
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to cancel subscription')
+      }
+
+      setSubscriptionStatus('cancelled')
+      alert('Subscription cancelled successfully')
+    } catch (error) {
+      console.error('Cancellation failed:', error)
+      alert(`Failed to cancel subscription: ${error.message}`)
+    }
   }
 
   const handleUpdateEmail = () => {

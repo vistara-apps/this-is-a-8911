@@ -1,13 +1,36 @@
-import React from 'react'
-import { Share2, Copy, MessageCircle, Mail } from 'lucide-react'
+import React, { useState } from 'react'
+import { Share2, Copy, MessageCircle, Mail, Sparkles } from 'lucide-react'
+import { OpenAIService } from '../services/api'
 
 export default function ShareButton({ 
   content, 
   title = 'Shield Rights', 
-  variant = 'default' 
+  variant = 'default',
+  encounterData = null,
+  userState = null,
+  enableAIGeneration = false 
 }) {
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generatedContent, setGeneratedContent] = useState('')
+
+  const generateAIContent = async () => {
+    if (!enableAIGeneration || !encounterData || !userState) return
+
+    setIsGenerating(true)
+    try {
+      const aiContent = await OpenAIService.generateShareableContent(encounterData, userState)
+      setGeneratedContent(aiContent)
+    } catch (error) {
+      console.error('AI content generation failed:', error)
+      alert('Failed to generate content. Please try again.')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   const handleShare = async (method) => {
-    const shareText = `${title}\n\n${content}\n\nGet the app: shieldrights.app`
+    const contentToShare = generatedContent || content
+    const shareText = `${title}\n\n${contentToShare}\n\nGet the app: shieldrights.app`
     
     switch (method) {
       case 'native':
@@ -56,6 +79,33 @@ export default function ShareButton({
   return (
     <div className="space-y-3">
       <h4 className="text-white font-medium text-sm">Share This Information</h4>
+      
+      {enableAIGeneration && (
+        <div className="mb-3">
+          <button
+            onClick={generateAIContent}
+            disabled={isGenerating}
+            className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-accent hover:bg-yellow-500 text-black rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          >
+            {isGenerating ? (
+              <>
+                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                <span>Generating...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} />
+                <span>Generate AI Summary</span>
+              </>
+            )}
+          </button>
+          {generatedContent && (
+            <div className="mt-2 p-3 bg-white/10 rounded-lg">
+              <p className="text-white text-sm">{generatedContent}</p>
+            </div>
+          )}
+        </div>
+      )}
       
       <div className="grid grid-cols-2 gap-2">
         <button
